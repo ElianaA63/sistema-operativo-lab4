@@ -1,35 +1,41 @@
-CC := gcc
 
-# To eliminate debugging messages use -DNDEBUG
-CFLAGS := -O0 -std=gnu11 -Wall -Werror -Wno-unused-parameter -Werror=vla -g \
-	  -D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26 -D_GNU_SOURCE
-CPPFLAGS := `pkg-config --cflags glib-2.0`
-LDFLAGS=`pkg-config --libs glib-2.0` -lfuse
 
-export CC
-export CFLAGS
-export CPPFLAGS
-export LDFLAGS
+# La forma normal de usar este Makefile debería ser correr
+# "make test" EN EL DIRECTORIO DE ARRIBA, no en este.
+CPPFLAGS+= -I..
+LDFLAGS+= `pkg-config --libs check`
 
-HEADERS := $(wildcard *.h)
-SOURCES := $(wildcard *.c)
-TARGET := fat-fuse
+TARGET=runner
+SOURCES=$(shell echo *.c)
 
-OBJECTS=$(SOURCES:.c=.o)
+# Already compiled modules
+COMMON_OBJECTS=../hierarchy_tree.o
+MOCK_OBJECTS=mock_fat_file.o fat_fs_tree.o
+vpath fat_fs_tree.c ..
+fat_fs_tree.o: CPPFLAGS += -DREPLACE_MOCK=1
 
-all: $(TARGET)
+# - Every test suit tries to link as few files as possible
+test_h_tree_runner: test_hierarchy_tree.o $(COMMON_OBJECTS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(TARGET): $(OBJECTS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+test_fat_tree_runner: test_fat_fs_tree.o $(COMMON_OBJECTS) $(MOCK_OBJECTS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test-ht: hierarchy_tree.o
-	make -C tests test_ht
+# Ejecutar runners
+test_ht: test_h_tree_runner
+	./$^
 
-test-ft:
-	make -C tests test_ft
+test_ft: test_fat_tree_runner
+	./$^
+
+.PHONY: all clean test
+
+all: test
 
 clean:
-	rm -f $(TARGET) $(OBJECTS) tags cscope*
-	make -C tests clean
+	rm -f $(TARGET) *.o test*.log .depend *~ *_runner
 
-.PHONY: clean
+.depend: $(SOURCES)
+	$(CC) $(CPPFLAGS) -MM $^ > $@
+
+-include .depend
